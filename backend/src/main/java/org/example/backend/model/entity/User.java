@@ -55,6 +55,11 @@ public class User {
     @Builder.Default
     private SystemRole role = SystemRole.USER;
 
+    /** Trạng thái kích hoạt tài khoản (dùng cho Spring Security isEnabled). */
+    @Column(name = "enabled", nullable = false)
+    @Builder.Default
+    private boolean enabled = true;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
