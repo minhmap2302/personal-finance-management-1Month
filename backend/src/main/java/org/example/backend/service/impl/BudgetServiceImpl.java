@@ -1,4 +1,4 @@
-package org.example.backend.service;
+package org.example.backend.service.impl;
 
 import lombok.RequiredArgsConstructor;
 import org.example.backend.exception.BadRequestException;
@@ -18,13 +18,17 @@ import org.example.backend.model.entity.Family;
 import org.example.backend.model.entity.FamilyMember;
 import org.example.backend.model.enums.CategoryType;
 import org.example.backend.model.enums.FamilyRole;
+import org.example.backend.model.enums.SavingGoalStatus;
+import org.example.backend.model.projection.CategorySpent;
 import org.example.backend.repository.BudgetRepository;
 import org.example.backend.repository.CategoryRepository;
 import org.example.backend.repository.FamilyMemberRepository;
 import org.example.backend.repository.FamilyRepository;
+import org.example.backend.service.BudgetService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -41,10 +45,14 @@ import java.util.stream.Collectors;
  * - Ngân sách tổng: category = null, parentBudget = null.
  * - Ngân sách con: thuộc một ngân sách tổng, theo một danh mục chi tiêu, dùng khoảng thời gian của ngân sách tổng.
  * Số liệu "đã dùng" luôn được tính từ giao dịch và khoản đóng góp, không lưu trong bảng.
+ *
+ * Các thao tác ghi chạy ở mức cô lập READ_COMMITTED và khóa dòng gia đình. Với REPEATABLE READ mặc định của MySQL,
+ * các câu SELECT thường sau khi chờ khóa vẫn đọc theo ảnh chụp cũ nên có thể không thấy dữ liệu vừa được
+ * yêu cầu khác commit, làm hỏng việc kiểm tra tổng và chồng lấn.
  */
 @Service
 @RequiredArgsConstructor
-public class BudgetService {
+public class BudgetServiceImpl implements BudgetService {
 
     /** Độ dài tối đa của một ngân sách tổng (số ngày). */
     private static final int MAX_BUDGET_DAYS = 366;
@@ -62,6 +70,7 @@ public class BudgetService {
     // =====================================================================
 
     @Transactional(readOnly = true)
+    @Override
     public Page<BudgetSummaryResponse> getBudgets(Long userId, Long familyId, Pageable pageable) {
         requireMember(userId, familyId);
         return budgetRepository.findByFamilyIdAndParentBudgetIsNull(familyId, pageable)
@@ -69,6 +78,7 @@ public class BudgetService {
     }
 
     @Transactional(readOnly = true)
+    @Override
     public BudgetDetailResponse getBudget(Long userId, Long familyId, Long budgetId) {
         requireMember(userId, familyId);
         return toDetail(findTotal(familyId, budgetId));
@@ -76,6 +86,7 @@ public class BudgetService {
 
     /** Ngân sách tổng bao phủ ngày được chọn, mặc định là hôm nay (giờ Việt Nam). */
     @Transactional(readOnly = true)
+    @Override
     public BudgetDetailResponse getCurrentBudget(Long userId, Long familyId, LocalDate date) {
         requireMember(userId, familyId);
         LocalDate target = date != null ? date : LocalDate.now(ZONE);
@@ -88,7 +99,8 @@ public class BudgetService {
     // Ngân sách tổng (chủ gia đình và quản lý)
     // =====================================================================
 
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @Override
     public BudgetDetailResponse createTotalBudget(Long userId, Long familyId, CreateTotalBudgetRequest request) {
         requireManager(userId, familyId);
         Family family = lockFamily(familyId);
@@ -107,7 +119,8 @@ public class BudgetService {
         return toDetail(total);
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @Override
     public BudgetDetailResponse updateTotalBudget(Long userId, Long familyId, Long budgetId,
                                                   UpdateTotalBudgetRequest request) {
         requireManager(userId, familyId);
@@ -138,7 +151,8 @@ public class BudgetService {
     }
 
     /** Xóa ngân sách tổng sẽ xóa luôn các ngân sách con. Giao diện nên yêu cầu xác nhận trước. */
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @Override
     public void deleteTotalBudget(Long userId, Long familyId, Long budgetId) {
         requireManager(userId, familyId);
         lockFamily(familyId);
@@ -153,7 +167,8 @@ public class BudgetService {
     // Ngân sách con (chủ gia đình và quản lý)
     // =====================================================================
 
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @Override
     public SubBudgetResponse createSubBudget(Long userId, Long familyId, Long totalBudgetId,
                                              CreateSubBudgetRequest request) {
         requireManager(userId, familyId);
@@ -182,7 +197,8 @@ public class BudgetService {
         return toSubResponse(sub, spentForCategory(total, category.getId()));
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @Override
     public SubBudgetResponse updateSubBudget(Long userId, Long familyId, Long totalBudgetId, Long subBudgetId,
                                              UpdateSubBudgetRequest request) {
         requireManager(userId, familyId);
@@ -201,7 +217,8 @@ public class BudgetService {
         return toSubResponse(sub, spentForCategory(total, sub.getCategory().getId()));
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @Override
     public void deleteSubBudget(Long userId, Long familyId, Long totalBudgetId, Long subBudgetId) {
         requireManager(userId, familyId);
         lockFamily(familyId);
@@ -325,8 +342,8 @@ public class BudgetService {
                 .sumExpensesByCategory(familyId, CategoryType.EXPENSE, start, end)
                 .stream()
                 .collect(Collectors.toMap(
-                        BudgetRepository.CategorySpent::getCategoryId,
-                        BudgetRepository.CategorySpent::getTotalAmount));
+                        CategorySpent::getCategoryId,
+                        CategorySpent::getTotalAmount));
 
         List<SubBudgetResponse> subResponses = subBudgets.stream()
                 .map(sub -> toSubResponse(sub,
@@ -371,10 +388,13 @@ public class BudgetService {
                 total.getFamily().getId(), CategoryType.EXPENSE, total.getStartDate(), total.getEndDate()));
     }
 
-    /** Tổng tiền đóng góp vào mục tiêu tiết kiệm: tính vào ngân sách tổng như một khoản đã dùng. */
+    /**
+     * Tổng tiền đóng góp vào mục tiêu tiết kiệm: tính vào ngân sách tổng như một khoản đã dùng.
+     * Mục tiêu đã hủy không được tính.
+     */
     private BigDecimal savedOf(Budget total) {
         return zeroIfNull(budgetRepository.sumContributions(
-                total.getFamily().getId(), total.getStartDate(), total.getEndDate()));
+                total.getFamily().getId(), SavingGoalStatus.CANCELLED, total.getStartDate(), total.getEndDate()));
     }
 
     private BigDecimal spentForCategory(Budget total, Long categoryId) {
