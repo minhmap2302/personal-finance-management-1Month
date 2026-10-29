@@ -61,6 +61,10 @@ public class Transaction {
     @Column(name = "description", length = 255)
     private String description;
 
+    /** Đường dẫn ảnh hóa đơn trên Cloudinary, có thể để trống. */
+    @Column(name = "receipt_image", length = 500)
+    private String receiptImage;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
