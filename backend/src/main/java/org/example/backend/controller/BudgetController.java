@@ -37,7 +37,7 @@ import java.time.LocalDate;
  * Xem: mọi thành viên. Tạo, sửa, xóa: chủ gia đình và quản lý.
  */
 @RestController
-@RequestMapping("/api/families/{familyId}/budgets")
+@RequestMapping("/api/v1/families/{familyId}/budgets")
 @RequiredArgsConstructor
 public class BudgetController {
 

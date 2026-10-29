@@ -2,10 +2,13 @@ package org.example.backend.repository;
 
 import org.example.backend.model.entity.Budget;
 import org.example.backend.model.enums.CategoryType;
+import org.example.backend.model.enums.SavingGoalStatus;
+import org.example.backend.model.projection.CategorySpent;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -15,13 +18,6 @@ import java.util.List;
 import java.util.Optional;
 
 public interface BudgetRepository extends JpaRepository<Budget, Long> {
-
-    /** Kết quả gom nhóm chi tiêu theo danh mục. */
-    interface CategorySpent {
-        Long getCategoryId();
-
-        BigDecimal getTotalAmount();
-    }
 
     // ------------------------- Truy vấn ngân sách -------------------------
 
@@ -91,11 +87,28 @@ public interface BudgetRepository extends JpaRepository<Budget, Long> {
                                       @Param("startDate") LocalDate startDate,
                                       @Param("endDate") LocalDate endDate);
 
-    /** Tổng tiền đóng góp vào các mục tiêu tiết kiệm của gia đình trong khoảng thời gian. */
+    /**
+     * Tổng tiền đóng góp vào các mục tiêu tiết kiệm của gia đình trong khoảng thời gian,
+     * bỏ qua các mục tiêu có trạng thái excludedStatus (truyền CANCELLED để không tính mục tiêu đã hủy).
+     */
     @Query("select sum(c.amount) from SavingContribution c "
             + "where c.savingGoal.family.id = :familyId "
+            + "and c.savingGoal.status <> :excludedStatus "
             + "and c.contributionDate between :startDate and :endDate")
     BigDecimal sumContributions(@Param("familyId") Long familyId,
+                                @Param("excludedStatus") SavingGoalStatus excludedStatus,
                                 @Param("startDate") LocalDate startDate,
                                 @Param("endDate") LocalDate endDate);
+
+    // ------------------------- Xóa hàng loạt khi xóa gia đình -------------------------
+
+    /** Xóa các ngân sách con của gia đình (phải xóa trước ngân sách tổng). */
+    @Modifying(flushAutomatically = true)
+    @Query("delete from Budget b where b.family.id = :familyId and b.parentBudget is not null")
+    int deleteSubBudgetsOfFamily(@Param("familyId") Long familyId);
+
+    /** Xóa mọi ngân sách của gia đình. Gọi sau deleteSubBudgetsOfFamily. */
+    @Modifying(flushAutomatically = true)
+    @Query("delete from Budget b where b.family.id = :familyId")
+    int deleteAllBudgetsOfFamily(@Param("familyId") Long familyId);
 }
