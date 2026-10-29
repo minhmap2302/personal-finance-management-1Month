@@ -37,12 +37,25 @@ public class UserServiceImpl implements UserService {
     public UserResponse updateProfile(Long userId, UpdateProfileRequest request) {
         User user = getUserById(userId);
 
-        if (userRepository.existsByEmailAndIdNot(request.getEmail(), userId)) {
-            throw new ConflictException("Email '" + request.getEmail() + "' đã được sử dụng bởi tài khoản khác");
+        if (request.getUsername() != null && !request.getUsername().isBlank()) {
+            String newUsername = request.getUsername().trim();
+            if (userRepository.existsByUsernameAndIdNot(newUsername, userId)) {
+                throw new ConflictException("Tên đăng nhập '" + newUsername + "' đã được sử dụng bởi tài khoản khác");
+            }
+            user.setUsername(newUsername);
         }
 
-        user.setFullName(request.getFullName());
-        user.setEmail(request.getEmail());
+        if (request.getFullName() != null && !request.getFullName().isBlank()) {
+            user.setFullName(request.getFullName().trim());
+        }
+
+        if (request.getEmail() != null && !request.getEmail().isBlank()) {
+            String newEmail = request.getEmail().trim();
+            if (userRepository.existsByEmailAndIdNot(newEmail, userId)) {
+                throw new ConflictException("Email '" + newEmail + "' đã được sử dụng bởi tài khoản khác");
+            }
+            user.setEmail(newEmail);
+        }
 
         User updatedUser = userRepository.save(user);
         return UserResponse.fromEntity(updatedUser);

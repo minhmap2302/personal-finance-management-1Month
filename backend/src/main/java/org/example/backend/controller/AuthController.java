@@ -13,10 +13,11 @@ import org.example.backend.service.AuthService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping({"/api/auth", "/api/v1/auth"})
+@RequestMapping("/api/v1/auth")
 @RequiredArgsConstructor
 public class AuthController {
 
@@ -41,10 +42,15 @@ public class AuthController {
             @RequestBody(required = false) RefreshTokenRequest request,
             @AuthenticationPrincipal User currentUser) {
         String refreshToken = (request != null) ? request.getRefreshToken() : null;
+        String tokenHeader = authHeader;
+        if (!StringUtils.hasText(tokenHeader) && request != null && StringUtils.hasText(request.getAccessToken())) {
+            tokenHeader = "Bearer " + request.getAccessToken().trim();
+        }
+
         if (refreshToken != null || currentUser != null) {
-            authService.logout(authHeader, refreshToken, currentUser);
+            authService.logout(tokenHeader, refreshToken, currentUser);
         } else {
-            authService.logout(authHeader);
+            authService.logout(tokenHeader);
         }
         return ResponseEntity.ok(ApiResponse.success("Đăng xuất thành công"));
     }

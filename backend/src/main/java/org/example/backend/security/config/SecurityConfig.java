@@ -1,12 +1,14 @@
 package org.example.backend.security.config;
 
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
-import org.example.backend.repository.UserRepository;
-import org.example.backend.security.jwt.JwtAccessDeniedHandler;
-import org.example.backend.security.jwt.JwtAuthenticationEntryPoint;
 import org.example.backend.security.jwt.JwtAuthenticationFilter;
+import org.example.backend.security.principal.CustomUserDetailsService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -16,12 +18,17 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.userdetails.UserDetailsService;
-import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.AuthenticationEntryPoint;
+
+import java.io.IOException;
+import java.time.LocalDateTime;
 
 @Configuration
 @EnableWebSecurity
@@ -30,9 +37,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
-    private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
-    private final JwtAccessDeniedHandler jwtAccessDeniedHandler;
-    private final UserRepository userRepository;
+    private final CustomUserDetailsService customUserDetailsService;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -40,18 +45,49 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(exception -> exception
-                        .authenticationEntryPoint(jwtAuthenticationEntryPoint)
-                        .accessDeniedHandler(jwtAccessDeniedHandler)
+                        .authenticationEntryPoint(new AuthenticationEntryPoint() {
+                            @Override
+                            public void commence(HttpServletRequest request, HttpServletResponse response,
+                                                 AuthenticationException authException) throws IOException {
+                                response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+                                response.setCharacterEncoding("UTF-8");
+                                response.setStatus(HttpStatus.UNAUTHORIZED.value());
+                                response.getWriter().write(String.format(
+                                        "{\"timestamp\":\"%s\",\"status\":%d,\"error\":\"%s\",\"message\":\"%s\",\"path\":\"%s\"}",
+                                        LocalDateTime.now(), HttpStatus.UNAUTHORIZED.value(),
+                                        HttpStatus.UNAUTHORIZED.getReasonPhrase(),
+                                        "Yêu cầu xác thực để truy cập tài nguyên này",
+                                        request.getRequestURI()
+                                ));
+                            }
+                        })
+                        .accessDeniedHandler(new AccessDeniedHandler() {
+                            @Override
+                            public void handle(HttpServletRequest request, HttpServletResponse response,
+                                               org.springframework.security.access.AccessDeniedException accessDeniedException) throws IOException {
+                                response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+                                response.setCharacterEncoding("UTF-8");
+                                response.setStatus(HttpStatus.FORBIDDEN.value());
+                                response.getWriter().write(String.format(
+                                        "{\"timestamp\":\"%s\",\"status\":%d,\"error\":\"%s\",\"message\":\"%s\",\"path\":\"%s\"}",
+                                        LocalDateTime.now(), HttpStatus.FORBIDDEN.value(),
+                                        HttpStatus.FORBIDDEN.getReasonPhrase(),
+                                        "Bạn không có quyền truy cập tài nguyên này",
+                                        request.getRequestURI()
+                                ));
+                            }
+                        })
                 )
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(
-                                "/api/auth/**",
-                                "/api/v1/auth/**",
-                                "/v3/api-docs/**",
-                                "/swagger-ui/**",
-                                "/swagger-ui.html",
-                                "/error"
-                        ).permitAll()
+                        // --- Endpoint công khai (không cần đăng nhập) ---
+                        .requestMatchers("/api/v1/auth/**").permitAll()
+                        // Swagger / OpenAPI
+                        .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                        // Spring Boot error page
+                        .requestMatchers("/error").permitAll()
+                        // --- Khu vực quản trị chỉ dành cho ADMIN ---
+                        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+                        // --- Tất cả request còn lại phải xác thực ---
                         .anyRequest().authenticated()
                 )
                 .authenticationProvider(authenticationProvider())
@@ -62,8 +98,7 @@ public class SecurityConfig {
 
     @Bean
     public UserDetailsService userDetailsService() {
-        return username -> userRepository.findByUsernameOrEmail(username)
-                .orElseThrow(() -> new UsernameNotFoundException("Không tìm thấy người dùng với tài khoản: " + username));
+        return customUserDetailsService;
     }
 
     @Bean

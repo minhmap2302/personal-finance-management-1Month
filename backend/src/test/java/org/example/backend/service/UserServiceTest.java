@@ -84,30 +84,44 @@ class UserServiceTest {
     }
 
     @Test
-    @DisplayName("Cập nhật hồ sơ thành công: họ tên và email được lưu")
-    void shouldUpdateProfileSuccessfully_whenValidData() {
+    @DisplayName("Cập nhật hồ sơ thành công: chỉ cập nhật các trường được gửi, giữ nguyên những trường còn lại")
+    void shouldUpdateProfileSuccessfully_whenValidPartialData() {
         UpdateProfileRequest request = UpdateProfileRequest.builder()
-                .fullName("Nguyễn Văn B")
-                .email("newemail@example.com")
+                .username("newuser")
                 .build();
 
         when(userRepository.findById(1L)).thenReturn(Optional.of(testUser));
-        when(userRepository.existsByEmailAndIdNot("newemail@example.com", 1L)).thenReturn(false);
+        when(userRepository.existsByUsernameAndIdNot("newuser", 1L)).thenReturn(false);
         when(userRepository.save(any(User.class))).thenReturn(testUser);
 
         UserResponse response = userService.updateProfile(1L, request);
 
         assertNotNull(response);
-        assertEquals("Nguyễn Văn B", testUser.getFullName());
-        assertEquals("newemail@example.com", testUser.getEmail());
+        assertEquals("newuser", testUser.getUsername());
+        assertEquals("Nguyễn Văn A", testUser.getFullName());
+        assertEquals("test@example.com", testUser.getEmail());
         verify(userRepository).save(testUser);
+    }
+
+    @Test
+    @DisplayName("Cập nhật hồ sơ thất bại khi username bị trùng với người dùng khác (409 Conflict)")
+    void shouldThrowConflict_whenUsernameAlreadyUsedByAnotherUser() {
+        UpdateProfileRequest request = UpdateProfileRequest.builder()
+                .username("existinguser")
+                .build();
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(testUser));
+        when(userRepository.existsByUsernameAndIdNot("existinguser", 1L)).thenReturn(true);
+
+        ConflictException ex = assertThrows(ConflictException.class, () -> userService.updateProfile(1L, request));
+        assertTrue(ex.getMessage().contains("Tên đăng nhập"));
+        verify(userRepository, never()).save(any());
     }
 
     @Test
     @DisplayName("Cập nhật hồ sơ thất bại khi email bị trùng với người dùng khác (409 Conflict)")
     void shouldThrowConflict_whenEmailAlreadyUsedByAnotherUser() {
         UpdateProfileRequest request = UpdateProfileRequest.builder()
-                .fullName("Nguyễn Văn B")
                 .email("existing@example.com")
                 .build();
 
