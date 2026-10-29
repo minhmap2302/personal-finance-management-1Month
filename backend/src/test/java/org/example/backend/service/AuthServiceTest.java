@@ -15,7 +15,6 @@ import org.example.backend.repository.InvalidatedTokenRepository;
 import org.example.backend.repository.RefreshTokenRepository;
 import org.example.backend.repository.UserRepository;
 import org.example.backend.security.jwt.JwtService;
-import org.example.backend.security.jwt.TokenHashUtils;
 import org.example.backend.service.impl.AuthServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -171,7 +170,7 @@ class AuthServiceTest {
         assertEquals(testUser, savedToken.getUser());
         assertFalse(savedToken.isRevoked());
         // Đảm bảo không lưu raw token mà lưu bản băm SHA-256
-        assertEquals(TokenHashUtils.hashToken(response.getRefreshToken()), savedToken.getToken());
+        assertEquals(JwtService.hashToken(response.getRefreshToken()), savedToken.getToken());
     }
 
     @Test
@@ -223,7 +222,7 @@ class AuthServiceTest {
     void shouldLogoutSuccessfully_andRevokeTokens() {
         String authHeader = "Bearer sample.access.token";
         String rawRefreshToken = "sample-refresh-token";
-        String hashedToken = TokenHashUtils.hashToken(rawRefreshToken);
+        String hashedToken = JwtService.hashToken(rawRefreshToken);
 
         RefreshToken refreshTokenEntity = RefreshToken.builder()
                 .id(1L)
@@ -251,7 +250,7 @@ class AuthServiceTest {
     @DisplayName("Làm mới token thành công: áp dụng rotation, thu hồi token cũ và sinh token mới")
     void shouldRefreshTokenSuccessfully_whenTokenIsValid() {
         String rawRefreshToken = "valid-raw-refresh-token";
-        String hashedToken = TokenHashUtils.hashToken(rawRefreshToken);
+        String hashedToken = JwtService.hashToken(rawRefreshToken);
 
         RefreshToken oldToken = RefreshToken.builder()
                 .id(10L)
@@ -283,7 +282,7 @@ class AuthServiceTest {
     @DisplayName("Làm mới token thất bại khi không tìm thấy refresh token trong CSDL")
     void shouldThrowUnauthorized_whenRefreshTokenNotFound() {
         String rawRefreshToken = "non-existent-token";
-        String hashedToken = TokenHashUtils.hashToken(rawRefreshToken);
+        String hashedToken = JwtService.hashToken(rawRefreshToken);
 
         when(refreshTokenRepository.findByToken(hashedToken)).thenReturn(Optional.empty());
 
@@ -295,7 +294,7 @@ class AuthServiceTest {
     @DisplayName("Phát hiện Token Reuse: nếu refresh token đã revoked gửi lên -> thu hồi toàn bộ session")
     void shouldThrowUnauthorized_andRevokeAllUserTokens_whenTokenReuseDetected() {
         String rawRefreshToken = "already-revoked-token";
-        String hashedToken = TokenHashUtils.hashToken(rawRefreshToken);
+        String hashedToken = JwtService.hashToken(rawRefreshToken);
 
         RefreshToken revokedToken = RefreshToken.builder()
                 .id(10L)
@@ -319,7 +318,7 @@ class AuthServiceTest {
     @DisplayName("Làm mới token thất bại khi refresh token đã hết hạn")
     void shouldThrowUnauthorized_whenRefreshTokenIsExpired() {
         String rawRefreshToken = "expired-token";
-        String hashedToken = TokenHashUtils.hashToken(rawRefreshToken);
+        String hashedToken = JwtService.hashToken(rawRefreshToken);
 
         RefreshToken expiredToken = RefreshToken.builder()
                 .id(10L)
@@ -338,4 +337,6 @@ class AuthServiceTest {
         verify(refreshTokenRepository).save(expiredToken);
     }
 }
+
+
 

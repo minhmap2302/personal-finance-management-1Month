@@ -7,7 +7,8 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.backend.model.entity.User;
-import org.example.backend.repository.UserRepository;
+import org.example.backend.security.principal.CustomUserDetails;
+import org.example.backend.security.principal.CustomUserDetailsService;
 import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -17,7 +18,6 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.Optional;
 
 @Slf4j
 @Component
@@ -25,7 +25,7 @@ import java.util.Optional;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
-    private final UserRepository userRepository;
+    private final CustomUserDetailsService customUserDetailsService;
 
     @Override
     protected void doFilterInternal(
@@ -38,23 +38,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (token != null && jwtService.validateToken(token)) {
             try {
                 String username = jwtService.extractUsername(token);
-                Long userId = jwtService.extractUserId(token);
 
                 if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-                    Optional<User> userOptional = (userId != null)
-                            ? userRepository.findById(userId)
-                            : userRepository.findByUsernameOrEmail(username);
-
-                    if (userOptional.isPresent()) {
-                        User user = userOptional.get();
-                        if (user.isEnabled()) {
-                            UsernamePasswordAuthenticationToken authentication =
-                                    new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
-                            authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                            SecurityContextHolder.getContext().setAuthentication(authentication);
-                        } else {
-                            log.warn("Tài khoản '{}' đã bị vô hiệu hóa khi cố gắng xác thực", username);
-                        }
+                    CustomUserDetails userDetails = (CustomUserDetails) customUserDetailsService.loadUserByUsername(username);
+                    User currentUser = userDetails.getUser();
+                    if (currentUser.isEnabled()) {
+                        UsernamePasswordAuthenticationToken authentication =
+                                new UsernamePasswordAuthenticationToken(currentUser, null, currentUser.getAuthorities());
+                        authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                        SecurityContextHolder.getContext().setAuthentication(authentication);
+                    } else {
+                        log.warn("Tài khoản '{}' đã bị vô hiệu hóa khi cố gắng xác thực", username);
                     }
                 }
             } catch (Exception e) {

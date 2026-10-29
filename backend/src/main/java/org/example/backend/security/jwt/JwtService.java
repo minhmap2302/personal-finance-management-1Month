@@ -13,10 +13,15 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
 
@@ -24,16 +29,33 @@ import java.util.function.Function;
 @Service
 public class JwtService {
 
+    /** Chuỗi Base64 của khóa HMAC. Không có giá trị mặc định: thiếu biến môi trường thì app không khởi động. */
     @Value("${application.security.jwt.secret-key}")
     private String secretKey;
 
-    @Value("${application.security.jwt.expiration-ms:86400000}")
+    /** Mặc định 15 phút. */
+    @Value("${application.security.jwt.expiration-ms:900000}")
     private long jwtExpirationMs;
 
     private final InvalidatedTokenRepository invalidatedTokenRepository;
 
+    private volatile SecretKey signingKey;
+
     public JwtService(InvalidatedTokenRepository invalidatedTokenRepository) {
         this.invalidatedTokenRepository = invalidatedTokenRepository;
+    }
+
+    public static String hashToken(String rawToken) {
+        if (rawToken == null) {
+            return null;
+        }
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(rawToken.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("Thuật toán SHA-256 không khả dụng trên hệ thống", e);
+        }
     }
 
     public long getJwtExpirationMs() {
@@ -101,6 +123,7 @@ public class JwtService {
         return claimsResolver.apply(claims);
     }
 
+    /** Parse + kiểm tra chữ ký + hạn dùng (ném JwtException nếu không hợp lệ). */
     public Claims extractAllClaims(String token) {
         return Jwts.parser()
                 .verifyWith(getSigningKey())
@@ -109,21 +132,26 @@ public class JwtService {
                 .getPayload();
     }
 
-    public boolean validateToken(String token) {
+    /**
+     * Parse token đúng MỘT lần và kiểm tra blacklist (1 truy vấn DB theo jti).
+     * Trả về Optional.empty() nếu token sai chữ ký, hết hạn hoặc đã bị thu hồi khi đăng xuất.
+     */
+    public Optional<Claims> parseValidClaims(String token) {
         try {
             Claims claims = extractAllClaims(token);
-            if (claims.getExpiration().before(new Date())) {
-                return false;
-            }
             String jti = claims.getId();
-            if (jti != null && invalidatedTokenRepository != null && invalidatedTokenRepository.existsById(jti)) {
-                return false;
+            if (jti == null || invalidatedTokenRepository.existsById(jti)) {
+                return Optional.empty();
             }
-            return true;
+            return Optional.of(claims);
         } catch (JwtException | IllegalArgumentException e) {
             log.debug("Token JWT không hợp lệ: {}", e.getMessage());
-            return false;
+            return Optional.empty();
         }
+    }
+
+    public boolean validateToken(String token) {
+        return parseValidClaims(token).isPresent();
     }
 
     public boolean isTokenValid(String token, UserDetails userDetails) {
@@ -138,8 +166,13 @@ public class JwtService {
     }
 
     private SecretKey getSigningKey() {
-        byte[] keyBytes = Decoders.BASE64.decode(secretKey);
-        return Keys.hmacShaKeyFor(keyBytes);
+        SecretKey key = signingKey;
+        if (key == null) {
+            byte[] keyBytes = Decoders.BASE64.decode(secretKey);
+            // Ném WeakKeyException nếu khóa < 256 bit -> phát hiện cấu hình yếu ngay lần dùng đầu tiên
+            key = Keys.hmacShaKeyFor(keyBytes);
+            signingKey = key;
+        }
+        return key;
     }
 }
-

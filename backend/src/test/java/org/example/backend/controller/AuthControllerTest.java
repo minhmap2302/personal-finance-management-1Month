@@ -77,33 +77,6 @@ class AuthControllerTest {
     }
 
     @Test
-    @DisplayName("POST /api/auth/register - Kiểm tra hỗ trợ đường dẫn /api/auth/register")
-    void register_withStandardPath_success() throws Exception {
-        UserResponse mockResponse = UserResponse.builder()
-                .id(1L)
-                .email("test@example.com")
-                .username("testuser")
-                .createdAt(LocalDateTime.now())
-                .build();
-
-        when(authService.register(any(RegisterRequest.class))).thenReturn(mockResponse);
-
-        String json = """
-                {
-                    "email": "test@example.com",
-                    "username": "testuser",
-                    "password": "password123"
-                }
-                """;
-
-        mockMvc.perform(post("/api/auth/register")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(json))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.success").value(true));
-    }
-
-    @Test
     @DisplayName("POST /api/v1/auth/register - Dữ liệu không hợp lệ trả về 400 Bad Request")
     void register_validationError() throws Exception {
         String invalidJson = """

@@ -11,6 +11,8 @@ import org.springframework.data.repository.query.Param;
  */
 public interface TransactionRepository extends JpaRepository<Transaction, Long> {
 
+    boolean existsByCategoryId(Long categoryId);
+ 
     /** Xóa mọi giao dịch của gia đình (bước đầu tiên khi xóa gia đình). */
     @Modifying(flushAutomatically = true)
     @Query("delete from Transaction t where t.family.id = :familyId")

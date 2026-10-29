@@ -39,6 +39,8 @@ public interface BudgetRepository extends JpaRepository<Budget, Long> {
 
     boolean existsByParentBudgetIdAndCategoryId(Long parentBudgetId, Long categoryId);
 
+    boolean existsByCategoryId(Long categoryId);
+
     /**
      * Đếm các ngân sách tổng của gia đình có khoảng thời gian chồng lấn với [startDate, endDate].
      * Truyền excludeId (hoặc -1 khi tạo mới) để bỏ qua chính ngân sách đang sửa.

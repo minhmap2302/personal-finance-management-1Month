@@ -17,7 +17,6 @@ import org.example.backend.repository.InvalidatedTokenRepository;
 import org.example.backend.repository.RefreshTokenRepository;
 import org.example.backend.repository.UserRepository;
 import org.example.backend.security.jwt.JwtService;
-import org.example.backend.security.jwt.TokenHashUtils;
 import org.example.backend.service.AuthService;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.DisabledException;
@@ -88,7 +87,7 @@ public class AuthServiceImpl implements AuthService {
 
         String accessToken = jwtService.generateToken(user);
         String rawRefreshToken = generateSecureRefreshToken();
-        String hashedRefreshToken = TokenHashUtils.hashToken(rawRefreshToken);
+        String hashedRefreshToken = JwtService.hashToken(rawRefreshToken);
 
         RefreshToken refreshToken = RefreshToken.builder()
                 .user(user)
@@ -119,12 +118,12 @@ public class AuthServiceImpl implements AuthService {
     public void logout(String authHeader, String rawRefreshToken, User currentUser) {
         // 1. Thu hồi Access Token (lưu vào bảng invalidated_tokens)
         if (StringUtils.hasText(authHeader) && authHeader.startsWith("Bearer ")) {
-            String token = authHeader.substring(7);
+            String token = authHeader.substring(7).trim();
             try {
                 String jti = jwtService.extractJti(token);
                 Instant expiry = jwtService.extractExpirationInstant(token);
-                String tokenId = (jti != null) ? jti : token;
 
+                String tokenId = (jti != null) ? jti : token;
                 if (!invalidatedTokenRepository.existsById(tokenId)) {
                     InvalidatedToken invalidatedToken = InvalidatedToken.builder()
                             .id(tokenId)
@@ -133,13 +132,13 @@ public class AuthServiceImpl implements AuthService {
                     invalidatedTokenRepository.save(invalidatedToken);
                 }
             } catch (Exception e) {
-                log.debug("Bỏ qua lỗi trích xuất token khi logout: {}", e.getMessage());
+                log.warn("Không thể lưu token bị thu hồi: {}", e.getMessage());
             }
         }
 
         // 2. Thu hồi Refresh Token nếu client gửi lên
         if (StringUtils.hasText(rawRefreshToken)) {
-            String hashedToken = TokenHashUtils.hashToken(rawRefreshToken);
+            String hashedToken = JwtService.hashToken(rawRefreshToken);
             refreshTokenRepository.findByToken(hashedToken).ifPresent(rt -> {
                 rt.setRevoked(true);
                 refreshTokenRepository.save(rt);
@@ -160,7 +159,7 @@ public class AuthServiceImpl implements AuthService {
             throw new UnauthorizedException("Refresh token không được để trống");
         }
 
-        String hashedToken = TokenHashUtils.hashToken(rawToken);
+        String hashedToken = JwtService.hashToken(rawToken);
         RefreshToken refreshToken = refreshTokenRepository.findByToken(hashedToken)
                 .orElseThrow(() -> new UnauthorizedException("Refresh token không hợp lệ hoặc không tồn tại"));
 
@@ -194,7 +193,7 @@ public class AuthServiceImpl implements AuthService {
         // Cấp Access Token mới và Refresh Token mới
         String newAccessToken = jwtService.generateToken(user);
         String newRawRefreshToken = generateSecureRefreshToken();
-        String newHashedToken = TokenHashUtils.hashToken(newRawRefreshToken);
+        String newHashedToken = JwtService.hashToken(newRawRefreshToken);
 
         RefreshToken newRefreshToken = RefreshToken.builder()
                 .user(user)
