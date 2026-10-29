@@ -1,0 +1,8 @@
+# Secrets
+.env
+
+# IDE
+.idea/
+
+# Backup dữ liệu (task sau)
+backups/
