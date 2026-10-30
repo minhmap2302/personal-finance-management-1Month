@@ -3,6 +3,11 @@ package org.example.backend.controller;
 import org.example.backend.exception.ConflictException;
 import org.example.backend.exception.GlobalExceptionHandler;
 import org.example.backend.exception.ResourceNotFoundException;
+import org.example.backend.model.dto.response.CategoryResponse;
+import org.example.backend.model.entity.User;
+import org.example.backend.model.enums.CategoryType;
+import org.example.backend.security.principal.CustomUserDetails;
+import org.example.backend.service.CategoryService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -77,7 +82,6 @@ class CategoryControllerTest {
                 .id(1L)
                 .name("Ăn uống")
                 .type(CategoryType.EXPENSE)
-                .createdAt(LocalDateTime.now())
                 .build();
 
         when(categoryService.createCategory(any(CategoryCreateRequest.class), any(User.class)))
