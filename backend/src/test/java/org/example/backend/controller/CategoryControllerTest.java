@@ -114,6 +114,56 @@ public class CategoryControllerTest {
     }
 
     @Test
+    @DisplayName("POST /api/v1/categories/system - Không đăng nhập trả về 401")
+    void createSystemCategory_unauthorized() throws Exception {
+        mockMvc = buildMockMvcWithUser(null);
+
+        String json = """
+                {
+                    "name": "Ăn uống",
+                    "type": "EXPENSE"
+                }
+                """;
+
+        mockMvc.perform(post("/api/v1/categories/system")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.status").value(401));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/categories/families/{familyId} - Tạo danh mục gia đình thành công")
+    void createFamilyCategory_success() throws Exception {
+        CategoryResponse response = CategoryResponse.builder()
+                .id(2L)
+                .name("Đi chợ")
+                .type(CategoryType.EXPENSE)
+                .familyId(99L)
+                .active(true)
+                .system(false)
+                .build();
+
+        when(categoryService.createFamilyCategory(eq(mockUser), eq(99L), any(CreateCategoryRequest.class)))
+                .thenReturn(response);
+
+        String json = """
+                {
+                    "name": "Đi chợ",
+                    "type": "EXPENSE"
+                }
+                """;
+
+        mockMvc.perform(post("/api/v1/categories/families/99")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.familyId").value(99))
+                .andExpect(jsonPath("$.data.name").value("Đi chợ"));
+    }
+
+    @Test
     @DisplayName("GET /api/v1/categories - Lấy danh sách danh mục thành công")
     void getCategories_success() throws Exception {
         CategoryResponse response = CategoryResponse.builder()
@@ -201,25 +251,40 @@ public class CategoryControllerTest {
     }
 
     @Test
+    @DisplayName("PUT /api/v1/categories/{categoryId} - Không đăng nhập trả về 401")
+    void updateCategory_unauthorized() throws Exception {
+        mockMvc = buildMockMvcWithUser(null);
+
+        String json = """
+                {
+                    "name": "Mua sắm",
+                    "type": "EXPENSE"
+                }
+                """;
+
+        mockMvc.perform(put("/api/v1/categories/1")
+                        .param("familyId", "5")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.status").value(401));
+    }
+
+    @Test
+    @DisplayName("DELETE /api/v1/categories/{categoryId} - Không đăng nhập trả về 401")
+    void deleteCategory_unauthorized() throws Exception {
+        mockMvc = buildMockMvcWithUser(null);
+
+        mockMvc.perform(delete("/api/v1/categories/1")
+                        .param("familyId", "5"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.status").value(401));
+    }
+
+    @Test
     @DisplayName("GET /api/v1/categories - Truy cập không có người dùng trả về 401")
     void getCategories_unauthorized() throws Exception {
-        HandlerMethodArgumentResolver nullUserResolver = new HandlerMethodArgumentResolver() {
-            @Override
-            public boolean supportsParameter(MethodParameter parameter) {
-                return parameter.getParameterType().isAssignableFrom(User.class);
-            }
-
-            @Override
-            public Object resolveArgument(MethodParameter parameter, ModelAndViewContainer mavContainer,
-                                          NativeWebRequest webRequest, WebDataBinderFactory binderFactory) {
-                return null;
-            }
-        };
-
-        mockMvc = MockMvcBuilders.standaloneSetup(categoryController)
-                .setControllerAdvice(new GlobalExceptionHandler())
-                .setCustomArgumentResolvers(nullUserResolver)
-                .build();
+        mockMvc = buildMockMvcWithUser(null);
 
         mockMvc.perform(get("/api/v1/categories"))
                 .andExpect(status().isUnauthorized())
@@ -236,5 +301,25 @@ public class CategoryControllerTest {
                         .param("type", "EXPENSE"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.message").value("Không tìm thấy danh mục"));
+    }
+
+    private MockMvc buildMockMvcWithUser(User user) {
+        HandlerMethodArgumentResolver userResolver = new HandlerMethodArgumentResolver() {
+            @Override
+            public boolean supportsParameter(MethodParameter parameter) {
+                return parameter.getParameterType().isAssignableFrom(User.class);
+            }
+
+            @Override
+            public Object resolveArgument(MethodParameter parameter, ModelAndViewContainer mavContainer,
+                                          NativeWebRequest webRequest, WebDataBinderFactory binderFactory) {
+                return user;
+            }
+        };
+
+        return MockMvcBuilders.standaloneSetup(categoryController)
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .setCustomArgumentResolvers(userResolver)
+                .build();
     }
 }
